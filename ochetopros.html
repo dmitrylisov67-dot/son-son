@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Статистика анкеты о сне</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; background: #fff; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }
+        header h1 { font-size: 1.8rem; margin-bottom: 10px; }
+        .content { padding: 30px; }
+        .controls { text-align: center; margin-bottom: 30px; }
+        .btn { padding: 14px 28px; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.3s ease; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(102,126,234,0.4); }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .stat-card { background: #f8f9fa; padding: 20px; border-radius: 15px; text-align: center; }
+        .stat-value { font-size: 2.5rem; font-weight: 700; color: #667eea; }
+        .stat-label { color: #666; font-size: 0.95rem; }
+        .chart-section { margin-bottom: 40px; }
+        .chart-title { font-size: 1.3rem; color: #333; margin-bottom: 20px; text-align: center; }
+        .chart-container { background: #f8f9fa; padding: 20px; border-radius: 15px; }
+        canvas { max-width: 100%; margin: 0 auto; display: block; }
+        .loading, .error { text-align: center; padding: 40px; color: #666; }
+        .error { color: #ef4444; }
+        .question-stat { margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; }
+        .question-bar { height: 24px; background: #e9ecef; border-radius: 12px; overflow: hidden; display: flex; }
+        .bar-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: white; font-weight: 600; }
+        .bar-0 { background: #ef4444; } .bar-1 { background: #f97316; } .bar-2 { background: #eab308; }
+        .bar-3 { background: #22c55e; } .bar-4 { background: #14b8a6; } .bar-5 { background: #667eea; }
+        @media (max-width: 600px) { .content { padding: 15px; } .stats-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Статистика анкеты о сне</h1>
+            <p>Данные из Google Таблицы</p>
+        </header>
+        <div class="content">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="loadData()">🔄 Обновить данные</button>
+            </div>
+            <div id="loading" class="loading">Загрузка...</div>
+            <div id="error" class="error" style="display:none"></div>
+            <div id="stats" style="display:none">
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-value" id="totalResponses">0</div><div class="stat-label">Всего ответов</div></div>
+                    <div class="stat-card"><div class="stat-value" id="avgScore">0</div><div class="stat-label">Средний балл</div></div>
+                    <div class="stat-card"><div class="stat-value" id="avgPercent">0%</div><div class="stat-label">Средний %</div></div>
+                </div>
+                <div class="chart-section">
+                    <h3 class="chart-title">Распределение по категориям</h3>
+                    <div class="chart-container"><canvas id="pieChart" width="400" height="450"></canvas></div>
+                </div>
+                <div class="chart-section">
+                    <h3 class="chart-title">Гистограмма баллов</h3>
+                    <div class="chart-container"><canvas id="histogramChart" width="600" height="300"></canvas></div>
+                </div>
+                <div class="chart-section"><h3 class="chart-title">Ответы по вопросам</h3><div id="questionsStats"></div></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyUuYRaeUlUNPLf5rMkA-O83A1YJMRTa_AlxKaHacmezOPklfo1--SK5ngpzRg3Ep3brg/exec';
+        let allData = [];
+        async function loadData() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('stats').style.display = 'none';
+            try {
+                const response = await fetch(APPS_SCRIPT_URL + '?action=getAll', { redirect: 'follow' });
+                if (!response.ok) throw new Error('Ошибка загрузки');
+                allData = JSON.parse(await response.text());
+                if (!Array.isArray(allData) || allData.length === 0) throw new Error('Нет данных');
+                displayStats();
+            } catch (e) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = e.message;
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        function displayStats() {
+            document.getElementById('stats').style.display = 'block';
+            const total = allData.length;
+            const scores = allData.map(d => parseInt(d.score) || 0);
+            const avgScore = (scores.reduce((a,b) => a+b,0) / total).toFixed(1);
+            document.getElementById('totalResponses').textContent = total;
+            document.getElementById('avgScore').textContent = avgScore;
+            document.getElementById('avgPercent').textContent = Math.round((avgScore/75)*100) + '%';
+            drawPieChart();
+            drawHistogram(scores);
+            displayQuestionsStats();
+        }
+        function drawPieChart() {
+            const c = document.getElementById('pieChart'), ctx = c.getContext('2d');
+            const cx = c.width/2, cy = c.height/2 - 30, r = 150;
+            const cats = { '0-20':0, '21-40':0, '41-66':0, '67-75':0 };
+            allData.forEach(d => { const s = parseInt(d.score)||0; if(s<=20) cats['0-20']++; else if(s<=40) cats['21-40']++; else if(s<=66) cats['41-66']++; else cats['67-75']++; });
+            const colors = ['#ef4444','#f59e0b','#22c55e','#667eea'], labels = ['Дефицит (0-20)','Проблемы (21-40)','Хороший (41-66)','Отличный (67-75)'];
+            let start = 0;
+            ctx.clearRect(0,0,c.width,c.height);
+            Object.values(cats).forEach((cnt,i) => { if(cnt==0)return; const angle = (cnt/allData.length)*2*Math.PI; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,start+angle); ctx.fillStyle=colors[i]; ctx.fill(); start+=angle; });
+            ctx.font='14px Arial'; let y=320;
+            Object.values(cats).forEach((cnt,i) => { ctx.fillStyle=colors[i]; ctx.fillRect(20,y-10,20,20); ctx.fillStyle='#333'; ctx.fillText(`${labels[i]}: ${cnt} (${Math.round(cnt/allData.length*100)}%)`,50,y+4); y+=28; });
+        }
+        function drawHistogram(scores) {
+            const c = document.getElementById('histogramChart'), ctx = c.getContext('2d');
+            const bins = Array(16).fill(0);
+            scores.forEach(s => { bins[Math.min(Math.floor(s/5),15)]++; });
+            const maxBin = Math.max(...bins,1), barW=35, ch=250, pad=40;
+            ctx.clearRect(0,0,c.width,c.height);
+            bins.forEach((cnt,i) => { const h = (cnt/maxBin)*ch, x=pad+i*barW, y=pad+ch-h; ctx.fillStyle=`hsl(${i*7.5},70%,55%)`; ctx.fillRect(x,y,barW-4,h); if(cnt>0){ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';ctx.fillText(cnt,x+barW/2-2,y-5);} });
+            ctx.fillStyle='#666'; ctx.font='11px Arial'; ctx.textAlign='center';
+            for(let i=0;i<=15;i+=3) ctx.fillText(i*5+'-'+(i*5+4),pad+i*barW+barW/2-2,pad+ch+20);
+            ctx.fillText('Баллы',pad+15*barW/2,c.height-5);
+        }
+        function displayQuestionsStats() {
+            const container = document.getElementById('questionsStats');
+            container.innerHTML = '';
+            const qs = ['B1','B2','B3','B4','C1','C2','D1','D2','D3','D4','E1','E2','E3','F1','F2'];
+            const labs = {'B1':'B1. Время отхода ко сну','B2':'B2. Время подъёма','B3':'B3. Часов сна в будни','B4':'B4. Часов сна в выходные','C1':'C1. Трудности с засыпанием','C2':'C2. Бодрость утром','D1':'D1. Гаджеты перед сном','D2':'D2. Кофе/чай вечером','D3':'D3. ДЗ перед сном','D4':'D4. Спорт вечером','E1':'E1. Сонливость на уроках','E2':'E2. Концентрация','E3':'E3. Усталость/раздражительность','F1':'F1. Успеваемость','F2':'F2. Связь сна и оценок'};
+            qs.forEach(q => { const cnts=[0,0,0,0,0,0]; allData.forEach(d=>{const v=parseInt(d[q]);if(!isNaN(v)&&v>=0&&v<=5) cnts[v]++;}); const total=cnts.reduce((a,b)=>a+b,0); let h=`<div class="question-stat"><div class="question-stat-label">${labs[q]}</div><div class="question-bar">`; cnts.forEach((c,i)=>{if(c>0)h+=`<div class="bar-segment bar-${i}" style="width:${Math.round(c/total*100)}%">${Math.round(c/total*100)>10?i:''}</div>`}); h+='</div></div>'; container.innerHTML+=h; });
+        }
+        loadData();
+    </script>
+</body>
+</html>
